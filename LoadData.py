@@ -5,16 +5,25 @@ import numpy as np
 import pandas as pd
 from collections import defaultdict
 import time
-
+import time_handler
 # consts
 NA = "Na"
+FEATURES = [("production_countries", "name", 80), ("genres", "name", 0), ("production_companies", "name", 80),
+            ("keywords", "name", 80), ("cast", "name", 80), ("crew", "name", 80)]
+mask = []
+
+# def set_feature(p):
+#     global FEATURES
+#     FEATURES = [("production_countries", "name", p), ("genres", "name", 10), ("production_companies", "name", p),
+#                 ("keywords", "name", p), ("cast", "name", p), ("crew", "name", p)]
+
 
 
 def load_data(path):
     df = pd.read_csv(path)
-    # df.insert(0, 0, 1)  # adding intersect
-    # df = df.loc[df["revenue"] > 0]
-    df["belongs_to_collection"] = '[' + df['belongs_to_collection'].astype(str) + ']'
+    # df.insert(0, 0, 1)  # adding intercept
+    # df["belongs_to_collection"] = '[' + df['belongs_to_collection'].astype(str) + ']'
+    df.dropna(subset=["release_date"], inplace=True)
     return df
 
 
@@ -75,7 +84,7 @@ def create_dict_from_col(df, col_name, row, main_d, lst, field_name):
     if type(lst) == str:
         l = eval(lst)
         for d in l:
-            main_d[d[field_name]].append(row["id"] - 1)
+            main_d[d[field_name]].append(row["rowIndex"])
         return l
 
 
@@ -98,26 +107,64 @@ def get_common(new_features, percentile):
     return common_features
 
 
-def create_dummies_from_language():
-    global df
+def create_dummies_from_language_Train(df):
     # language
+    global mask
     counts = pd.value_counts(df["original_language"])
-    mask = df["original_language"].isin(counts[counts > 29].index)
-    dummies = pd.get_dummies(df["original_language"][mask])
+    mask = counts[counts > 29]
+    dummies = pd.get_dummies(df["original_language"])
+    dummies = dummies[mask.index]
+    df = pd.concat((df, dummies), axis=1)
     df.drop("original_language", axis='columns', inplace=True)
-    df = pd.concat([df, dummies])
+    return df
 
 
-def get_data(mode=1):  # 0 for rating, 1 for revenue
-    s_time = time.time()
+def create_dummies_from_language_Test(df):
+    # language
+    global mask
+    for lang in mask.index:
+        vec = np.where(df["original_language"] == lang, 1, 0)
+        df = pd.concat((df, pd.DataFrame(vec, columns=[lang])), axis=1)
+    df.drop("original_language", axis='columns', inplace=True)
+    return df
+
+
+def get_df_and_mats():
     path = "movies_dataset.csv"
     df = load_data(path)
-    features = [("genres", "name", 0), ("production_companies", "name", 99), ("keywords", "name", 90)
-        ,("cast", "name", 90), ("crew", "name", 90)]
-    mats = get_score_mats(df, features)
-    generate_score_cols(df, features, mats,mode)
-    remove_features_cols(df, features)
-    create_dummies_from_language()
-    e_time = time.time()
-    print(f"Run-time is:{e_time - s_time}")
+    df['rowIndex'] = np.arange(df.shape[0])
+    mats = get_score_mats(df, FEATURES)
+    # mats = []
+    df.drop("rowIndex", axis='columns', inplace=True)
+    return df, mats
+
+
+def modify_original_title(df):
+    df["original_title"] = df.apply(lambda row: len(row.original_title.split(" ")) if type(row.original_title) is str else 0, axis=1)
     return df
+
+
+def modify_data(df, mats, mode=1):  # 0 for rating, 1 for revenue
+    # for each data
+    generate_score_cols(df, FEATURES, mats, mode)
+    remove_features_cols(df, FEATURES)
+    # df = create_dummies_from_language_Train(df)
+    df = time_handler.add_time_features(df)
+    df = modify_original_title(df)
+    vec = np.where(df["belongs_to_collection"] == df["belongs_to_collection"], 1, 0)
+    df["belongs_to_collection"] = vec
+    df.drop(columns=["id", "homepage", "overview", "title", "tagline", "spoken_languages","original_language"], inplace=True)
+    return df
+
+def modify_test(df, mats, mode=1):  # 0 for rating, 1 for revenue
+    # for each data
+    generate_score_cols(df, FEATURES, mats, mode)
+    remove_features_cols(df, FEATURES)
+    # df = create_dummies_from_language_Test(df)
+    df = time_handler.add_time_features(df)  # median Year
+    df = modify_original_title(df)
+    vec = np.where(df["belongs_to_collection"] == df["belongs_to_collection"], 1, 0)
+    df["belongs_to_collection"] = vec
+    df.drop(columns=["id", "homepage", "overview", "title", "tagline", "spoken_languages","original_language"],inplace=True)
+    return df
+
