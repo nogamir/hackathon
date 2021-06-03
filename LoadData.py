@@ -4,6 +4,7 @@ sys.path.append("../")
 import numpy as np
 import pandas as pd
 from collections import defaultdict
+import time
 
 # consts
 NA = "Na"
@@ -37,11 +38,11 @@ def get_score_mats(df, features):
     return mats
 
 
-def generate_score_cols(df, features, mats):
+def generate_score_cols(df, features, mats, mode):
     for i, f in enumerate(features):
         feature_name, field_name, p = f
         mat = mats[i]
-        value_vec = df.apply(lambda row: calc_cell_val(mat, row[feature_name], field_name), axis=1)
+        value_vec = df.apply(lambda row: calc_cell_val(mat, row[feature_name], field_name, mode), axis=1)
         vec_name = "score_value_" + feature_name
         df[vec_name] = value_vec
 
@@ -57,7 +58,7 @@ def calc_cell_val(score_mat, cell, field_name, mode=1):  # 0 for rating, 1 for r
 
 def remove_features_cols(df, features):
     for feature_name, field_name, p in features:
-        df.drop(feature_name,axis='columns', inplace=True)
+        df.drop(feature_name, axis='columns', inplace=True)
     return df
 
 
@@ -79,25 +80,44 @@ def create_dict_from_col(df, col_name, row, main_d, lst, field_name):
 
 
 def get_score_mat(new_features, percentile, df):
+    score_mat = get_common(new_features, percentile)
+    for feature in score_mat:
+        col = np.zeros(len(df))
+        np.put(col, feature[1], 1)
+        feature[1] = np.corrcoef(col, df['vote_average'])[0, 1]
+        feature[2] = np.corrcoef(col, df['revenue'])[0, 1]
+    return score_mat
+
+
+def get_common(new_features, percentile):
     #  find threshold:
     feature_frequency_col = new_features[:, 2]
     threshold = np.percentile(feature_frequency_col, percentile, axis=0)
     #  return common features list:
     common_features = new_features[feature_frequency_col >= threshold]
-    for feature in common_features:
-        col = np.zeros(len(df))
-        np.put(col, feature[1], 1)
-        feature[1] = np.corrcoef(col, df['vote_average'])[0, 1]
-        feature[2] = np.corrcoef(col, df['revenue'])[0, 1]
     return common_features
 
 
-if __name__ == '__main__':
+def create_dummies_from_language():
+    global df
+    # language
+    counts = pd.value_counts(df["original_language"])
+    mask = df["original_language"].isin(counts[counts > 29].index)
+    dummies = pd.get_dummies(df["original_language"][mask])
+    df.drop("original_language", axis='columns', inplace=True)
+    df = pd.concat([df, dummies])
+
+
+def get_data(mode=1):  # 0 for rating, 1 for revenue
+    s_time = time.time()
     path = "movies_dataset.csv"
     df = load_data(path)
-    features = [("genres", "name", 0), ("production_companies", "name", 99),("keywords", "name", 90)
-                ,("cast", "name", 90),("crew", "name", 90)]
+    features = [("genres", "name", 0), ("production_companies", "name", 99), ("keywords", "name", 90)
+        ,("cast", "name", 90), ("crew", "name", 90)]
     mats = get_score_mats(df, features)
-    generate_score_cols(df, features, mats)
+    generate_score_cols(df, features, mats,mode)
     remove_features_cols(df, features)
-    print(df)
+    create_dummies_from_language()
+    e_time = time.time()
+    print(f"Run-time is:{e_time - s_time}")
+    return df
