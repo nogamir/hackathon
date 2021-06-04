@@ -51,7 +51,8 @@ def generate_score_cols(df, features, mats, mode):
     for i, f in enumerate(features):
         feature_name, field_name, p = f
         mat = mats[i]
-        value_vec = df.apply(lambda row: calc_cell_val(mat, row[feature_name], field_name, mode), axis=1)
+        value_vec = df.apply(lambda row: calc_cell_val(mat, eval(row[feature_name]), field_name, mode) if type(row[
+            feature_name]) == str else calc_cell_val(mat, row[feature_name], field_name, mode), axis=1)
         vec_name = "score_value_" + feature_name
         df[vec_name] = value_vec
 
@@ -124,10 +125,9 @@ def create_dummies_from_language_Test(df):
     global mask
     for lang in mask.index:
         vec = np.where(df["original_language"] == lang, 1, 0)
-        df = pd.concat((df, pd.DataFrame(vec, columns=[lang])), axis=1)
+        df[lang] = vec
     df.drop("original_language", axis='columns', inplace=True)
     return df
-
 
 def get_df_and_mats():
     path = "movies_dataset.csv"
@@ -148,23 +148,23 @@ def modify_data(df, mats, mode=1):  # 0 for rating, 1 for revenue
     # for each data
     generate_score_cols(df, FEATURES, mats, mode)
     remove_features_cols(df, FEATURES)
-    # df = create_dummies_from_language_Train(df)
+    df = create_dummies_from_language_Train(df)
     df = time_handler.add_time_features(df)
     df = modify_original_title(df)
     vec = np.where(df["belongs_to_collection"] == df["belongs_to_collection"], 1, 0)
     df["belongs_to_collection"] = vec
-    df.drop(columns=["id", "homepage", "overview", "title", "tagline", "spoken_languages","original_language"], inplace=True)
+    df.drop(columns=["id", "homepage", "overview", "title", "tagline", "spoken_languages"], inplace=True)
     return df
 
 def modify_test(df, mats, mode=1):  # 0 for rating, 1 for revenue
     # for each data
     generate_score_cols(df, FEATURES, mats, mode)
     remove_features_cols(df, FEATURES)
-    # df = create_dummies_from_language_Test(df)
+    df = create_dummies_from_language_Test(df)
     df = time_handler.add_time_features(df)  # median Year
     df = modify_original_title(df)
     vec = np.where(df["belongs_to_collection"] == df["belongs_to_collection"], 1, 0)
     df["belongs_to_collection"] = vec
-    df.drop(columns=["id", "homepage", "overview", "title", "tagline", "spoken_languages","original_language"],inplace=True)
+    df.drop(columns=["id", "homepage", "overview", "title", "tagline", "spoken_languages"],inplace=True)
     return df
 
